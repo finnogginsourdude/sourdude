@@ -150,14 +150,18 @@ input, select, textarea {
 }
 textarea { min-height: 130px; resize: vertical; }
 .event-fields { display: grid; gap: 16px; }
-.hp { position: absolute; left: -9999px; }
 .socials { display: flex; flex-direction: column; gap: 12px; }
 .social {
   display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink);
   font-weight: 600; overflow-wrap: anywhere;
 }
 .social svg { flex: none; width: 36px; height: 36px; padding: 7px; border-radius: 50%; background: var(--crust); fill: #fff; }
-.form-status { font-weight: 600; color: var(--crust-deep); min-height: 1.4em; }
+.helper { font-size: .9rem; color: var(--ink-soft); max-width: none; }
+.result { display: grid; gap: 12px; border: 2px solid var(--crust); border-radius: 16px; padding: 18px 20px; background: var(--crumb); }
+.result strong { font-family: var(--display); font-weight: 600; font-size: 1.15rem; color: var(--crust-deep); }
+.result p { max-width: none; }
+.result .actions { margin-top: 0; }
+.addr { font-weight: 700; overflow-wrap: anywhere; user-select: all; }
 
 /* Footer / disclosure */
 footer { background: var(--crumb); border-top: 2px solid var(--line); padding-block: 40px; font-size: .92rem; color: var(--ink-soft); }
@@ -319,8 +323,8 @@ footer .wrap { display: grid; gap: 16px; }
       </div>
     </div>
 
-    <!-- SETUP: replace YOUR_FORM_ID with the ID from formspree.io (see README). -->
-    <form id="contact-form" action="https://formspree.io/f/YOUR_FORM_ID" method="POST">
+    <!-- This form prepares an email to the business address. It does not use any outside service. -->
+    <form id="contact-form">
       <div class="row2">
         <label for="f-name">Name <input id="f-name" name="name" type="text" autocomplete="name" required></label>
         <label for="f-email">Email <input id="f-email" name="email" type="email" autocomplete="email" required></label>
@@ -341,9 +345,19 @@ footer .wrap { display: grid; gap: 16px; }
         <label for="f-count">Expected crowd <input id="f-count" name="event_size" type="text" placeholder="About how many people?"></label>
       </div>
       <label for="f-msg">Message <textarea id="f-msg" name="message" required placeholder="How many loaves or baguettes, when you'd like them, or anything else on your mind."></textarea></label>
-      <input class="hp" type="text" name="_gotcha" tabindex="-1" autocomplete="off" aria-hidden="true">
-      <button class="btn" type="submit">Send message</button>
-      <p class="form-status" id="form-status" role="status"></p>
+      <button class="btn" type="submit">Continue to email</button>
+      <p class="helper">Next, you'll pick Gmail or your email app, with this message already filled in. It's sent when you press Send there.</p>
+      <div class="result" id="result" hidden role="status">
+        <strong>Your message is ready</strong>
+        <p>Pick where to send it from. Nothing is delivered until you press Send in your email.</p>
+        <div class="actions">
+          <a class="btn" id="open-mail" href="#">Open in my email app</a>
+          <a class="btn ghost" id="open-gmail" href="#" target="_blank" rel="noopener">Open in Gmail</a>
+          <button class="btn ghost" type="button" id="copy-msg">Copy message</button>
+        </div>
+        <p class="helper">Another option: email <span class="addr">fin.noggin.sourdude@gmail.com</span> yourself and paste the message in.</p>
+        <p class="helper" id="copy-status" role="status"></p>
+      </div>
     </form>
   </div>
 </section>
@@ -366,21 +380,46 @@ footer .wrap { display: grid; gap: 16px; }
   const eventFields = document.getElementById('event-fields');
   type.addEventListener('change', () => { eventFields.hidden = type.value !== 'Event / pop-up'; });
 
+  // EDIT: change this if the business email address ever changes.
+  const TO = 'fin.noggin.sourdude@gmail.com';
+
   const form = document.getElementById('contact-form');
-  const status = document.getElementById('form-status');
-  form.addEventListener('submit', async (e) => {
+  const result = document.getElementById('result');
+  const copyStatus = document.getElementById('copy-status');
+  let fullMessage = '';
+
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (form.action.includes('YOUR_FORM_ID')) {
-      status.textContent = 'The form isn\'t connected yet. Please email fin.noggin.sourdude@gmail.com for now.';
-      return;
+    const d = new FormData(form);
+    const topic = d.get('topic');
+    const lines = ['Name: ' + d.get('name'), 'Reply-to email: ' + d.get('email'), 'Topic: ' + topic];
+    if (topic === 'Event / pop-up') {
+      if (d.get('event_date')) lines.push('Event date: ' + d.get('event_date'));
+      if (d.get('event_town')) lines.push('Town: ' + d.get('event_town'));
+      if (d.get('event_size')) lines.push('Expected crowd: ' + d.get('event_size'));
     }
-    status.textContent = 'Sending…';
+    lines.push('', d.get('message'));
+
+    const subject = 'Sour-Dude website: ' + topic + ' from ' + d.get('name');
+    const body = lines.join('\n');
+    fullMessage = 'To: ' + TO + '\nSubject: ' + subject + '\n\n' + body;
+
+    const q = 'subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+    document.getElementById('open-mail').href = 'mailto:' + TO + '?' + q;
+    document.getElementById('open-gmail').href =
+      'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(TO) + '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+
+    copyStatus.textContent = '';
+    result.hidden = false;
+    result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  document.getElementById('copy-msg').addEventListener('click', async () => {
     try {
-      const res = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } });
-      if (res.ok) { form.reset(); eventFields.hidden = true; status.textContent = 'Thanks! Your message is on its way. We\'ll reply soon.'; }
-      else { status.textContent = 'That didn\'t go through. Please try again, or email fin.noggin.sourdude@gmail.com.'; }
+      await navigator.clipboard.writeText(fullMessage);
+      copyStatus.textContent = 'Copied. Paste it into a new email.';
     } catch {
-      status.textContent = 'Couldn\'t connect. Check your internet and try again, or email fin.noggin.sourdude@gmail.com.';
+      copyStatus.textContent = 'Couldn\'t copy automatically. Please email ' + TO + ' and type your message.';
     }
   });
 </script>
